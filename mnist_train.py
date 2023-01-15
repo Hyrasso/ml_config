@@ -1,7 +1,6 @@
-from dataclasses import dataclass, InitVar
-from config import Config, Trainer, Model, DatasetBuilder, Evaluator
+from dataclasses import dataclass
+from config import Config, Trainer, Model, DatasetBuilder, Evaluator, parametrize
 from pathlib import Path
-from typing import Any
 
 import torch
 from torch.nn.modules import Module
@@ -49,22 +48,36 @@ class MnistModel(Model):
         self._model.train()
         return out
 
+@parametrize(torch.optim.Adam)
 @dataclass
 class Adam:
     lr: float = 0.05
-
-    def optim(self, params):
-        return torch.optim.Adam(params, self.lr)
 
 @dataclass
 class Loss:
     loss_name: str = "CrossEntropyLoss"
 
-    def func(self):
+    def get(self):
         if self.loss_name == "CrossEntropyLoss":
             return torch.nn.CrossEntropyLoss()
         else:
             raise ValueError(f"Unknown loss name {self.loss_name}")
+
+
+@dataclass
+class MnistDatasetBuilder(DatasetBuilder):
+    root: Path = Path("data/mnist")
+    batch_size: int = 32
+
+    def __post_init__(self):
+        transform = transforms.Compose(
+            [transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))])
+        train_dataset = MNIST(root=str(self.root), train=True, download=True, transform=transform)
+        self.train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
+        eval_dataset = MNIST(root=str(self.root), train=False, transform=transform)
+        self.eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+
 
 @dataclass
 class MnistTrainer(Trainer):
@@ -76,17 +89,16 @@ class MnistTrainer(Trainer):
 
     print_every_n: int = 100
 
-    def fit(self, data):
-        train_loader, eval_loader = data
+    def fit(self, dataset: MnistDatasetBuilder):
+        train_loader, eval_loader = dataset.train_loader, dataset.eval_loader
 
-        optimizer = self.optimizer.optim(self.model._model.parameters())
-        criterion = self.loss.func()
+        optimizer = self.optimizer.get(self.model._model.parameters(), lr=0.1)
+        criterion = self.loss.get()
 
         for epoch in range(self.epochs):  # loop over the dataset multiple times
 
             running_loss = 0.0
             for i, data in enumerate(train_loader, 0):
-                if i > 1000:break
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data
 
@@ -116,20 +128,6 @@ class MnistTrainer(Trainer):
             
         print('Finished Training')
 
-@dataclass
-class MnistDatasetBuilder(DatasetBuilder):
-    root: Path = Path("data/mnist")
-    batch_size: int = 32
-
-    def prepare_data(self):
-        transform = transforms.Compose(
-            [transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))])
-        train_dataset = MNIST(root=str(self.root), train=True, download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
-        eval_dataset = MNIST(root=str(self.root), train=False, transform=transform)
-        eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        return train_loader, eval_loader
 
 @dataclass
 class MnistEvaluator(Evaluator):

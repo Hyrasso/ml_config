@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields, is_dataclass
+from inspect import getfile, getsourcelines
 from typing import TypeVar, Generic
 from pprint import pprint
 
@@ -31,10 +32,6 @@ class Trainer(ABC, Generic[Data]):
 class DatasetBuilder(ABC, Generic[Data]):
     ...
 
-    @abstractmethod
-    def prepare_data(self) -> Data:
-        ...
-
 @dataclass
 class Evaluator(ABC):
     ...
@@ -53,8 +50,39 @@ class Config:
         pprint(self)
         pprint(asdict(self))
         
-        data = self.dataset_builder.prepare_data()
-
-        self.trainer.fit(data)
+        self.trainer.fit(self.dataset_builder)
 
         self.evaluator.evaluate(self.trainer.model)
+
+def parametrize(param_cls):
+    """ Used to define config for a class
+    
+    ```
+    >>> @parametrize(optim.Adam)
+    ... @dataclass
+    ... class Adam(Optim):
+    ...     lr: float = 0.3
+    ... 
+    >>> adam = Adam()
+    >>> optim = adam.get(net.parameters())
+    ```
+    """
+
+    def wrapper(config_cls):
+        if not is_dataclass(config_cls):
+            raise ValueError("The parametrize decorator should be used on a dataclass")
+
+        # this function signature is the same as config_cls
+        def get(self, *args, **kwargs):
+            call_kwargs = {f.name: getattr(self, f.name) for f in fields(self)}
+            for k, v in kwargs.items():
+                if k in call_kwargs:
+                    raise ValueError(f"Bad argument '{k}', it is already set in the config class '{config_cls.__name__}' at {getfile(config_cls)}:{getsourcelines(config_cls)[1]}")
+                else:
+                    call_kwargs[k] = v
+            return param_cls(*args, **call_kwargs)
+        
+        config_cls.get = get
+        return config_cls
+    
+    return wrapper
