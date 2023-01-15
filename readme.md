@@ -14,3 +14,5 @@ How should list be handeled (eg transforms list), probably not an issue in the c
 What pattern for the model (wrapper that has the actual instanciated model as an attribute?, seperate model instanciation and config?)  
   what pattern for the model config: flat config or one config per module with its own params
 Should make switching and extending the different components easy (eg data now also returns weights, adding logging to the trainer, adding another evaluation at the end)  
+
+Parametrization of existing class interface may be improved, especially calling get to instanciate the class, better name, better way to go about it (the issue is that some class must be instanciated just before being used because they require eg data or model parameters)
